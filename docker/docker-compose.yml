@@ -1,0 +1,27 @@
+services:
+  oracle:
+    image: container-registry.oracle.com/database/free:latest
+    container_name: oracle-sql-lab
+    restart: "no"
+
+    ports:
+      - "1521:1521"
+
+    environment:
+      ORACLE_PWD: ${ORACLE_PASSWORD:-Oracle123!}
+      ORACLE_CHARACTERSET: AL32UTF8
+
+    volumes:
+      # Oracle 데이터는 컨테이너를 내려도 유지
+      - oracle-data:/opt/oracle/oradata
+
+      # root/table-definition -> 컨테이너에서 읽기 전용으로 참조
+      - ../table-definition:/workspace/table-definition:ro
+
+    deploy:
+      resources:
+        limits:
+          memory: 4GB
+
+volumes:
+  oracle-data:

@@ -1,0 +1,63 @@
+/******************************************************************************************
+ DROP
+******************************************************************************************/
+DROP TABLESPACE IF EXISTS TSD_COMPANY_DATA INCLUDING CONTENTS AND DATAFILES;;
+DROP TABLESPACE IF EXISTS TSD_COMPANY_IDX INCLUDING CONTENTS AND DATAFILES;;
+DROP TABLESPACE IF EXISTS TSD_SALARY_DATA INCLUDING CONTENTS AND DATAFILES;;
+DROP TABLESPACE IF EXISTS TSD_SALARY_IDX INCLUDING CONTENTS AND DATAFILES;;
+
+DROP USER IF EXISTS TUNING CASCADE;
+
+/******************************************************************************************
+ TABLESPACE 정의
+******************************************************************************************/
+CREATE TABLESPACE TSD_COMPANY_DATA
+DATAFILE '/opt/oracle/oradata/NEXORA/company_data01.dbf'
+SIZE 512M
+AUTOEXTEND ON
+NEXT 64M
+MAXSIZE 3G
+;
+
+CREATE TABLESPACE TSD_COMPANY_IDX
+DATAFILE '/opt/oracle/oradata/NEXORA/company_idx01.dbf'
+SIZE 256M
+AUTOEXTEND ON
+NEXT 32M
+MAXSIZE 2G
+;
+
+CREATE TABLESPACE TSD_SALARY_DATA
+DATAFILE '/opt/oracle/oradata/NEXORA/salary_data01.dbf'
+SIZE 1G
+AUTOEXTEND ON
+NEXT 256M
+MAXSIZE 4G
+;
+
+CREATE TABLESPACE TSD_SALARY_IDX
+DATAFILE '/opt/oracle/oradata/NEXORA/salary_idx01.dbf'
+SIZE 512M
+AUTOEXTEND ON
+NEXT 128M
+MAXSIZE 2G
+;
+
+/******************************************************************************************
+ USER 생성 및 권한 부여
+******************************************************************************************/
+CREATE USER TUNING
+IDENTIFIED BY tuning
+DEFAULT TABLESPACE TSD_COMPANY_DATA
+TEMPORARY TABLESPACE TEMP
+QUOTA UNLIMITED ON TSD_COMPANY_DATA
+QUOTA UNLIMITED ON TSD_COMPANY_IDX
+QUOTA UNLIMITED ON TSD_SALARY_DATA
+QUOTA UNLIMITED ON TSD_SALARY_IDX;
+
+GRANT CREATE SESSION TO TUNING;
+
+GRANT CREATE TABLE TO TUNING;
+GRANT CREATE VIEW TO TUNING;
+GRANT CREATE SEQUENCE TO TUNING;
+GRANT QUERY REWRITE TO TUNING;
