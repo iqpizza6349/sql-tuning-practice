@@ -38,22 +38,6 @@ TABLESPACE TSD_COMPANY_DATA
 LOGGING
 ;
 
-CREATE UNIQUE INDEX COMPANY_PK
-ON COMPANY(COMPANY_KEY)
-TABLESPACE TSD_COMPANY_IDX
-;
-
-CREATE UNIQUE INDEX COMPANY_UK
-ON COMPANY(BUSINESS_NUMBER)
-TABLESPACE TSD_COMPANY_IDX
-;
-
-ALTER TABLE COMPANY
-ADD CONSTRAINT COMPANY_PK
-PRIMARY KEY (COMPANY_KEY)
-USING INDEX COMPANY_PK
-;
-
 CREATE TABLE DEPARTMENT(
     DEPARTMENT_KEY NUMBER NOT NULL
 ,   COMPANY_KEY NUMBER NOT NULL
@@ -66,22 +50,6 @@ CREATE TABLE DEPARTMENT(
 )
 TABLESPACE TSD_COMPANY_DATA
 LOGGING
-;
-
-CREATE UNIQUE INDEX DEPARTMENT_PK
-ON DEPARTMENT(DEPARTMENT_KEY)
-TABLESPACE TSD_COMPANY_IDX
-;
-
-CREATE UNIQUE INDEX DEPARTMENT_UK
-ON DEPARTMENT(COMPANY_KEY, DEPARTMENT_ID)
-TABLESPACE TSD_COMPANY_IDX
-;
-
-ALTER TABLE DEPARTMENT
-ADD CONSTRAINT DEPARTMENT_PK
-PRIMARY KEY (DEPARTMENT_KEY)
-USING INDEX DEPARTMENT_PK
 ;
 
 CREATE TABLE EMPLOYEE(
@@ -97,22 +65,6 @@ CREATE TABLE EMPLOYEE(
 )
 TABLESPACE TSD_COMPANY_DATA
 LOGGING
-;
-
-CREATE UNIQUE INDEX EMPLOYEE_PK
-    ON EMPLOYEE(EMPLOYEE_KEY)
-    TABLESPACE TSD_COMPANY_IDX
-;
-
-CREATE UNIQUE INDEX EMPLOYEE_UK
-    ON EMPLOYEE(COMPANY_KEY, EMPLOYEE_NO)
-    TABLESPACE TSD_COMPANY_IDX
-;
-
-ALTER TABLE EMPLOYEE
-    ADD CONSTRAINT EMPLOYEE_PK
-        PRIMARY KEY (EMPLOYEE_KEY)
-    USING INDEX EMPLOYEE_PK
 ;
 
 CREATE TABLE SALARY(
@@ -134,6 +86,330 @@ TABLESPACE TSD_SALARY_DATA
 LOGGING
 ;
 
+/******************************************************************************************
+ SEQUENCE 정의: 모두 최대 10억 까지만.
+******************************************************************************************/
+CREATE SEQUENCE SEQ_COMPANY_KEY
+    START WITH 1
+    INCREMENT BY 1
+    MAXVALUE 1000000000
+    CACHE 10000
+    NOCYCLE
+;
+
+CREATE SEQUENCE SEQ_DEPARTMENT_KEY
+    START WITH 1
+    INCREMENT BY 1
+    MAXVALUE 1000000000
+    CACHE 10000
+    NOCYCLE
+;
+
+CREATE SEQUENCE SEQ_EMPLOYEE_KEY
+    START WITH 1
+    INCREMENT BY 1
+    MAXVALUE 1000000000
+    CACHE 10000
+    NOCYCLE
+;
+
+CREATE SEQUENCE SEQ_SALARY_KEY
+    START WITH 1
+    INCREMENT BY 1
+    MAXVALUE 1000000000
+    CACHE 10000
+    NOCYCLE
+;
+
+/******************************************************************************************
+ 테이블 초기화
+******************************************************************************************/
+DECLARE
+    vDummy PLS_INTEGER := 0;
+    vSqlStr VARCHAR2(1000);
+
+    C_TOTAL      CONSTANT PLS_INTEGER := 5000000;
+    C_BATCH_SIZE CONSTANT PLS_INTEGER := 100000;
+
+    V_OFFSET     PLS_INTEGER := 0;
+    V_BATCH_SIZE PLS_INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO vDummy
+    FROM (
+             SELECT 1
+             FROM ALL_TABLES
+             WHERE TABLE_NAME = 'COMPANY'
+             UNION ALL
+             SELECT 1
+             FROM ALL_TABLES
+             WHERE TABLE_NAME = 'DEPARTMENT'
+             UNION ALL
+             SELECT 1
+             FROM ALL_TABLES
+             WHERE TABLE_NAME = 'EMPLOYEE'
+             UNION ALL
+             SELECT 1
+             FROM ALL_TABLES
+             WHERE TABLE_NAME = 'SALARY'
+         )
+    ;
+
+    IF vDummy <> 4 THEN
+               RAISE_APPLICATION_ERROR(-20999, 'Tables are not created yet.');
+    END IF;
+
+        vSqlStr := 'TRUNCATE TABLE';
+
+    EXECUTE IMMEDIATE vSqlStr || ' COMPANY';
+    EXECUTE IMMEDIATE vSqlStr || ' DEPARTMENT';
+    EXECUTE IMMEDIATE vSqlStr || ' EMPLOYEE';
+    EXECUTE IMMEDIATE vSqlStr || ' SALARY';
+
+    INSERT /*+ APPEND */ INTO COMPANY (
+        COMPANY_KEY,
+        COMPANY_NAME,
+        BUSINESS_NUMBER,
+        CLOSE_STATUS,
+        ADDRESS,
+        STATUS,
+        NATION_CODE,
+        CREATED_AT,
+        MODIFIED_AT
+    )
+    SELECT
+        SEQ_COMPANY_KEY.NEXTVAL,
+        'COMPANY_' || LPAD(LEVEL, 4, '0'),
+        LPAD(LEVEL, 10, '0'),
+        CASE
+            WHEN MOD(LEVEL, 100) < 95 THEN 'N'
+            ELSE 'Y'
+            END,
+        'SEOUL ADDRESS ' || LEVEL,
+        CASE
+            WHEN MOD(LEVEL, 100) < 95 THEN 'ACTIVE'
+            ELSE 'CLOSED'
+            END,
+        'KOR',
+        SYSTIMESTAMP,
+        SYSTIMESTAMP
+    FROM DUAL
+        CONNECT BY LEVEL <= 1000;
+    COMMIT; /* COMPANY COMMIT */
+
+    INSERT /*+ APPEND */ INTO DEPARTMENT (
+        DEPARTMENT_KEY,
+        COMPANY_KEY,
+        DEPARTMENT_ID,
+        DEPARTMENT_NAME,
+        STATUS,
+        DESCRIPTION,
+        CREATED_AT,
+        MODIFIED_AT
+    )
+    SELECT
+        SEQ_DEPARTMENT_KEY.NEXTVAL,
+        TRUNC((LEVEL - 1) / 100) + 1,
+        'D' || LPAD(MOD(LEVEL - 1, 100) + 1, 3, '0'),
+        'DEPARTMENT_' || LPAD(LEVEL, 6, '0'),
+        CASE
+            WHEN MOD(LEVEL, 100) < 97 THEN 'ACTIVE'
+            ELSE 'INACTIVE'
+            END,
+        NULL,
+        SYSTIMESTAMP,
+        SYSTIMESTAMP
+    FROM DUAL
+        CONNECT BY LEVEL <= 100000;
+    COMMIT; /* DEPARTMENT COMMIT */
+
+    WHILE V_OFFSET < C_TOTAL LOOP
+
+            V_BATCH_SIZE := LEAST(
+                C_BATCH_SIZE,
+                C_TOTAL - V_OFFSET
+            );
+
+    INSERT /*+ APPEND */ INTO EMPLOYEE (
+        EMPLOYEE_KEY,
+        EMPLOYEE_NO,
+        EMPLOYEE_NAME,
+        DEPARTMENT_KEY,
+        POSITION_CODE,
+        HIRE_DATE,
+        STATUS,
+        MODIFIED_AT,
+        COMPANY_KEY
+    )
+    WITH SRC AS (
+        SELECT
+            V_OFFSET + LEVEL AS N
+        FROM DUAL
+    CONNECT BY LEVEL <= V_BATCH_SIZE
+        ),
+        EMP AS (
+    SELECT
+        N,
+        CASE
+        WHEN MOD(N, 100) < 70
+        THEN MOD(N * 37, 10000) + 1
+
+        WHEN MOD(N, 100) < 90
+        THEN MOD(N * 37, 30000) + 10001
+
+        ELSE
+        MOD(N * 37, 60000) + 40001
+        END AS DEPARTMENT_KEY
+    FROM SRC
+        )
+    SELECT
+        SEQ_EMPLOYEE_KEY.NEXTVAL,
+
+        'E' || LPAD(N, 12, '0'),
+
+        'EMPLOYEE_' || N,
+
+        DEPARTMENT_KEY,
+
+        CASE MOD(N, 10)
+            WHEN 0 THEN 'EXECUTIVE'
+            WHEN 1 THEN 'MANAGER'
+            WHEN 2 THEN 'SENIOR'
+            WHEN 3 THEN 'SENIOR'
+            ELSE 'STAFF'
+            END,
+
+        DATE '2010-01-01'
+            + MOD(N * 17, 3650),
+
+        CASE
+            WHEN MOD(N, 100) < 92 THEN 'ACTIVE'
+            WHEN MOD(N, 100) < 96 THEN 'RETIRED'
+            WHEN MOD(N, 100) < 99 THEN 'LEAVE'
+            ELSE 'TERMINATED'
+            END,
+
+        SYSTIMESTAMP,
+
+        TRUNC((DEPARTMENT_KEY - 1) / 100) + 1
+
+    FROM EMP;
+
+    COMMIT; /* EMPLOYEE COMMIT */
+
+    V_OFFSET := V_OFFSET + V_BATCH_SIZE;
+
+            DBMS_OUTPUT.PUT_LINE(
+                'Inserted: ' || V_OFFSET || ' / ' || C_TOTAL
+            );
+
+    END LOOP;
+
+    INSERT /*+ APPEND */ INTO SALARY (
+        SALARY_KEY,
+        EMPLOYEE_KEY,
+        BASE_SALARY,
+        BONUS,
+        START_DATE,
+        END_DATE,
+        INPUT_TIME
+    )
+    SELECT
+        SEQ_SALARY_KEY.NEXTVAL,
+
+        E.EMPLOYEE_KEY,
+
+        CASE E.POSITION_CODE
+            WHEN 'EXECUTIVE' THEN 120000000
+            WHEN 'MANAGER'   THEN  80000000
+            WHEN 'SENIOR'    THEN  60000000
+            ELSE                  40000000
+            END
+            + (H.HISTORY_NO - 1) * 5000000
+            + MOD(E.EMPLOYEE_KEY, 1000) * 10000,
+
+        CASE
+            WHEN E.POSITION_CODE = 'EXECUTIVE' THEN 30000000
+            WHEN E.POSITION_CODE = 'MANAGER'   THEN 10000000
+            ELSE 0
+            END,
+
+        ADD_MONTHS(
+                E.HIRE_DATE,
+                (H.HISTORY_NO - 1) * 24
+        ),
+
+        CASE
+            WHEN H.HISTORY_NO = 3 THEN NULL
+            ELSE
+                ADD_MONTHS(
+                        E.HIRE_DATE,
+                        H.HISTORY_NO * 24
+                ) - 1
+            END,
+
+        SYSTIMESTAMP
+    FROM EMPLOYEE E
+             CROSS JOIN (
+        SELECT LEVEL AS HISTORY_NO
+        FROM DUAL
+            CONNECT BY LEVEL <= 3
+    ) H;
+
+    COMMIT; /* SALARY COMMIT */
+END;
+/
+
+/******************************************************************************************
+ 테이블 인덱스 생성 및 부여: 최초 데이터 적재한 후에 통계 자료 업데이트하는 것이 적절하다고 생각함
+******************************************************************************************/
+CREATE UNIQUE INDEX COMPANY_PK
+    ON COMPANY(COMPANY_KEY)
+    TABLESPACE TSD_COMPANY_IDX
+;
+
+CREATE UNIQUE INDEX COMPANY_UK
+    ON COMPANY(BUSINESS_NUMBER)
+    TABLESPACE TSD_COMPANY_IDX
+;
+
+ALTER TABLE COMPANY
+    ADD CONSTRAINT COMPANY_PK
+        PRIMARY KEY (COMPANY_KEY)
+    USING INDEX COMPANY_PK
+;
+
+CREATE UNIQUE INDEX DEPARTMENT_PK
+    ON DEPARTMENT(DEPARTMENT_KEY)
+    TABLESPACE TSD_COMPANY_IDX
+;
+
+CREATE UNIQUE INDEX DEPARTMENT_UK
+    ON DEPARTMENT(COMPANY_KEY, DEPARTMENT_ID)
+    TABLESPACE TSD_COMPANY_IDX
+;
+
+ALTER TABLE DEPARTMENT
+    ADD CONSTRAINT DEPARTMENT_PK
+        PRIMARY KEY (DEPARTMENT_KEY)
+    USING INDEX DEPARTMENT_PK
+;
+
+CREATE UNIQUE INDEX EMPLOYEE_PK
+    ON EMPLOYEE(EMPLOYEE_KEY)
+    TABLESPACE TSD_COMPANY_IDX
+;
+
+CREATE UNIQUE INDEX EMPLOYEE_UK
+    ON EMPLOYEE(COMPANY_KEY, EMPLOYEE_NO)
+    TABLESPACE TSD_COMPANY_IDX
+;
+
+ALTER TABLE EMPLOYEE
+    ADD CONSTRAINT EMPLOYEE_PK
+        PRIMARY KEY (EMPLOYEE_KEY)
+    USING INDEX EMPLOYEE_PK
+;
+
 CREATE UNIQUE INDEX SALARY_PK
     ON SALARY(SALARY_KEY)
     TABLESPACE TSD_SALARY_IDX
@@ -152,8 +428,8 @@ CREATE UNIQUE INDEX SALARY_UK
  */
 CREATE UNIQUE INDEX SALARY_CURRENT_UK
     ON SALARY(
-         CASE WHEN END_DATE IS NULL THEN EMPLOYEE_KEY END
-    )
+              CASE WHEN END_DATE IS NULL THEN EMPLOYEE_KEY END
+        )
     TABLESPACE TSD_SALARY_IDX
 ;
 
@@ -163,37 +439,33 @@ ALTER TABLE SALARY
     USING INDEX SALARY_PK
 ;
 
-/******************************************************************************************
- SEQUENCE 정의: 모두 최대 10억 까지만.
-******************************************************************************************/
-CREATE SEQUENCE SEQ_COMPANY_KEY
-    START WITH 1
-    INCREMENT BY 1
-    MAXVALUE 1000000000
-    CACHE 20
-    NOCYCLE
-;
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        OWNNAME          => 'TUNING',
+        TABNAME          => 'COMPANY',
+        CASCADE          => TRUE,
+        METHOD_OPT       => 'FOR ALL COLUMNS SIZE AUTO'
+    );
 
-CREATE SEQUENCE SEQ_DEPARTMENT_KEY
-    START WITH 1
-    INCREMENT BY 1
-    MAXVALUE 1000000000
-    CACHE 20
-    NOCYCLE
-;
+    DBMS_STATS.GATHER_TABLE_STATS(
+        OWNNAME          => 'TUNING',
+        TABNAME          => 'DEPARTMENT',
+        CASCADE          => TRUE,
+        METHOD_OPT       => 'FOR ALL COLUMNS SIZE AUTO'
+    );
 
-CREATE SEQUENCE SEQ_EMPLOYEE_KEY
-    START WITH 1
-    INCREMENT BY 1
-    MAXVALUE 1000000000
-    CACHE 20
-    NOCYCLE
-;
+    DBMS_STATS.GATHER_TABLE_STATS(
+        OWNNAME          => 'TUNING',
+        TABNAME          => 'EMPLOYEE',
+        CASCADE          => TRUE,
+        METHOD_OPT       => 'FOR ALL COLUMNS SIZE AUTO'
+    );
 
-CREATE SEQUENCE SEQ_SALARY_KEY
-    START WITH 1
-    INCREMENT BY 1
-    MAXVALUE 1000000000
-    CACHE 20
-    NOCYCLE
-;
+    DBMS_STATS.GATHER_TABLE_STATS(
+        OWNNAME          => 'TUNING',
+        TABNAME          => 'SALARY',
+        CASCADE          => TRUE,
+        METHOD_OPT       => 'FOR ALL COLUMNS SIZE AUTO'
+    );
+END;
+/
