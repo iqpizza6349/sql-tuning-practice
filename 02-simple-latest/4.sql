@@ -1,0 +1,8 @@
+SELECT *
+FROM (
+    SELECT *
+    FROM SALARY s
+    ORDER BY s.START_DATE DESC
+)
+WHERE ROWNUM <= 1
+;
