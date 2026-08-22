@@ -28,7 +28,7 @@
 ### 3. 급여 높은 순 페이지네이션
 > 현재 급여 기준:
 > ```sql
-> BASE_SALARY DESC + BONUS DESC
+> BASE_SALARY DESC + BONUS DESC, EMPLOYEE_KEY DESC
 > ```
 > 으로 직원을 정렬하고 페이지당 20건씩 제공한다.
 > 101번째 페이지를 조회한다.
